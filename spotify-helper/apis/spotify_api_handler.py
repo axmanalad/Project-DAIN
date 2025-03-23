@@ -60,6 +60,28 @@ class SpotifyAPIHandler:
             return None
         return json_result
     
-if __name__ == "__main__":
-    spotify_api_handler = SpotifyAPIHandler()
-    print(spotify_api_handler.search_for_artist("Ado")) # JSON testing
+    def get_id(self, artist_name):
+        data = self.search_for_artist(artist_name)
+        if data:
+            artist_items = data.get("artists", {}).get("items", [])
+            if artist_items:
+                artist = artist_items[0]
+                return artist.get('id', 'Unknown')
+        return None
+    
+    def _get_top_tracks(self, artist_name):
+        artist_id = self.get_id(artist_name)
+        headers = self.get_auth_header(self.access_token)
+        if artist_id:
+            url = f"{self.BASE_URL}artists/{artist_id}/top-tracks?country=US"
+            result = get(url, headers=headers)
+            json_result = json.loads(result.content)
+            if result.status_code != 200:
+                print(f"Error: {json_result.get('error', {}).get('message', 'Unknown error')}")
+                return None
+            return json_result
+        return None
+
+# if __name__ == "__main__":
+#     spotify_api_handler = SpotifyAPIHandler()
+#     print(spotify_api_handler.search_for_artist("Ado")) # JSON testing

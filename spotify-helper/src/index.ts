@@ -5,7 +5,7 @@ import {
   defineDAINService,
   ToolConfig,
 } from "@dainprotocol/service-sdk";
-import { CardUIBuilder, ImageCardUIBuilder } from "@dainprotocol/utils";
+import { CardUIBuilder, ImageCardUIBuilder, ImageGalleryUIBuilder } from "@dainprotocol/utils";
 import { OAuth2Tokens } from "@dainprotocol/service-sdk";
 import { createOAuth2Tool } from "@dainprotocol/service-sdk";
 import dotenv from 'dotenv';
@@ -101,6 +101,69 @@ const getArtistInfo: ToolConfig = {
   },
 };
 
+const getTopTracks: ToolConfig = {
+  id: "get-top-tracks",
+  name: "Get Artist Top Tracks",
+  description: "Fetches listed top 10 tracks of an artist",
+  input: z
+      .object({
+          artist: z.string().describe("Artist spotify id"),
+      })
+      .describe("Input parameters for the spotify request"),
+  output: z
+      .object({
+          top_tracks: z.string().describe("Genres of the artist"),
+          img_urls: z.array(z.string()).describe("Image URLs of the top tracks"),
+      })
+      .describe("Top Tracks information"),
+  pricing: { pricePerUse: 0, currency: "USD" },
+  handler: async ({ artist }, agentInfo, context) => {
+      try {
+        console.log(`User / Agent ${agentInfo.id} requested top tracks from ${artist}`);
+        const { stdout, stderr } = await execAsync(`python3 apis/get_top_tracks.py "${artist}"`);
+
+        if (stderr) {
+            throw new Error(stderr);
+        }
+
+        const top_tracks = stdout.trim();
+        const img_urls_json = await fs.readFile(`apis/top_track_imgs.json`, 'utf8');
+        const img_urls = JSON.parse(img_urls_json);
+
+        if (!top_tracks) {
+            throw new Error("No genres found for the artist.");
+        }
+
+      return {
+          text: top_tracks,
+          data: { top_tracks, img_urls },
+          ui: new CardUIBuilder()
+              .setRenderMode("page")
+              .title(`Artist Top Tracks`)
+              .addChild(
+                new ImageGalleryUIBuilder()
+                  .title("Top Tracks")
+                  .description("Top 10 tracks of the artist")
+                  .addImages(img_urls.map((url: string) => ({ url })))
+                  .columns(2)
+                  .build()
+              )
+              .build(),
+      };
+      } catch (error) {
+          console.error("Error executing Python script:", error);
+          return {
+              text: "An error occurred while fetching the info.",
+              data: { genres: "Error: Unable to fetch spotify data." + error },
+              ui: new CardUIBuilder()
+                  .title("Error")
+                  .content("Unable to fetch spotify data.")
+                  .build(),
+          };
+      }
+  },
+};
+
 const getArtistGenres: ToolConfig = {
     id: "get-genres",
     name: "Get Artist Genres",
@@ -123,17 +186,6 @@ const getArtistGenres: ToolConfig = {
         try {
           console.log(`User / Agent ${agentInfo.id} requested genres at ${artist}`);
           const { stdout, stderr } = await execAsync(`python3 apis/get_genres.py "${artist}"`);
-          // const apiResponse = await axios.get(
-          //   `https://api.spotify.com/v1/search?q=${artist}&type=artist&limit=1`,
-          //   {
-          //     headers: {
-          //       Authorization: `Bearer ${process.env.SPOTIFY_ACCESS_TOKEN}`, // Use the access token
-          //       "Content-Type": "application/json",
-          //     },
-          //   }
-          // );
-
-          // const { genres } = apiResponse.data.artists.items[0];
 
           if (stderr) {
               throw new Error(stderr);
@@ -166,6 +218,57 @@ const getArtistGenres: ToolConfig = {
     },
 };
 
+const getArtistFollowers: ToolConfig = {
+  id: "get-followers",
+  name: "Get Artist Follower",
+  description: "Fetches followers of an artist",
+  input: z
+      .object({
+          artist: z.string().describe("Artist spotify id"),
+      })
+      .describe("Input parameters for the spotify request"),
+  output: z
+      .object({
+          followers: z.string().describe("Followers of the artist"),
+      })
+      .describe("Follower information"),
+  pricing: { pricePerUse: 0, currency: "USD" },
+  handler: async ({ artist }, agentInfo, context) => {
+      try {
+        console.log(`User / Agent ${agentInfo.id} requested genres from ${artist}`);
+        const { stdout, stderr } = await execAsync(`python3 apis/get_followers.py "${artist}"`);
+
+        if (stderr) {
+            throw new Error(stderr);
+        }
+
+        const followers = stdout.trim();
+        if (!followers) {
+            throw new Error("No genres found for the artist.");
+        }
+
+        return {
+            text: followers,
+            data: { followers },
+            ui: new CardUIBuilder()
+                .title(`Artist followers`)
+                .content(followers)
+                .build(),
+        };
+      } catch (error) {
+          console.error("Error executing Python script:", error);
+          return {
+              text: "An error occurred while fetching the info.",
+              data: { genres: "Error: Unable to fetch spotify data." + error },
+              ui: new CardUIBuilder()
+                  .title("Error")
+                  .content("Unable to fetch spotify data.")
+                  .build(),
+          };
+      }
+  },
+};
+
 const tokenStore = new Map<string, OAuth2Tokens>();
 
 const dainService = defineDAINService({
@@ -173,7 +276,7 @@ const dainService = defineDAINService({
     title: "Spotify DAIN Service",
     description: "A DAIN service for getting info on things related to Spotify with Spotify API",
     version: "1.0.0",
-    author: "Your Name",
+    author: "Alexander, Joseph",
     tags: ["artists", "music", "dain"],
     },
 
@@ -193,7 +296,8 @@ const dainService = defineDAINService({
           "user-read-email", 
           "playlist-read-private", // Example: Access private playlists
           "user-library-read",    // Example: Access user's saved tracks and albums
-          "user-top-read"         // Example: Access user's top artists and tracks],
+          "user-top-read",         // Example: Access user's top artists and tracks],
+          "user-modify-playback-state", // Example: Control playback on user's devices
         ],
             onSuccess: async (agentId, tokens) => {
                 tokenStore.set(agentId, tokens);
@@ -203,7 +307,7 @@ const dainService = defineDAINService({
       }
     }
   },
-    tools: [createOAuth2Tool("spotify"), getArtistInfo, getArtistGenres],
+    tools: [createOAuth2Tool("spotify"), getArtistInfo, getTopTracks, getArtistFollowers, getArtistGenres],
 });
 
 dainService.startNode().then(({ address }) => {

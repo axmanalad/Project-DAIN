@@ -31,6 +31,6 @@ if __name__ == "__main__":
             print(f"Artist information saved to artist_info.json")
         else:
             error_data = {"error": f"No information found for {artist_name}"}
-            with open("./apis/artist_info.json", "w") as json_file:
+            with open("artist_info.json", "w") as json_file:
                 json.dump(error_data, json_file, indent=4)  # Save the error message to the JSON file
             print(f"No information found for {artist_name}. Error saved to artist_info.json")
