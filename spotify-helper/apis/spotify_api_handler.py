@@ -59,3 +59,7 @@ class SpotifyAPIHandler:
             print(f"Error: {json_result.get('error', {}).get('message', 'Unknown error')}")
             return None
         return json_result
+    
+if __name__ == "__main__":
+    spotify_api_handler = SpotifyAPIHandler()
+    print(spotify_api_handler.search_for_artist("Ado")) # JSON testing

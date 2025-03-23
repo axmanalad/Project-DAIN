@@ -1,21 +1,105 @@
 import { z } from "zod";
 import { exec } from "child_process";
 import { promisify } from "util";
-import axios from "axios";
 import {
   defineDAINService,
   ToolConfig,
 } from "@dainprotocol/service-sdk";
-import { CardUIBuilder } from "@dainprotocol/utils";
+import { CardUIBuilder, ImageCardUIBuilder } from "@dainprotocol/utils";
 import { OAuth2Tokens } from "@dainprotocol/service-sdk";
-
 import { createOAuth2Tool } from "@dainprotocol/service-sdk";
 import dotenv from 'dotenv';
+import * as fs from 'fs/promises';
 
 dotenv.config(); // Load environment variables
 
 const execAsync = promisify(exec);
 
+
+const getArtistInfo: ToolConfig = {
+  id: "get-info",
+  name: "Get Artist Info",
+  description: "Fetches listed artist about the artist",
+  input: z
+      .object({
+          artist: z.string().describe("Artist spotify id"),
+      })
+      .describe("Input parameters for the spotify request"),
+  output: z
+      .object({
+          name: z.string().describe("Information about artist"),
+          followers: z.number().describe("Followers of the artist"),
+          genres: z.array(z.string()).describe("Genres of the artist"),
+          popularity: z.number().describe("Popularity of the artist"),
+          image: z.string().describe("Image URL of the artist"),
+          // artist_info: z.string().describe("Information about artist"),
+      })
+      .describe("Aritist information"),
+  pricing: { pricePerUse: 0, currency: "USD" },
+  handler: async ({ artist }, agentInfo, context) => {
+      try {
+        console.log(`User / Agent ${agentInfo.id} requested artist info from ${artist}`);
+        const { stdout, stderr } = await execAsync(`python3 apis/get_info.py "${artist}"`);
+        if (stderr) {
+            throw new Error(stderr);
+        }
+
+        const artist_info_json = await fs.readFile(`apis/artist_info.json`, 'utf8');
+        const artist_info = JSON.parse(artist_info_json);
+        console.log(artist_info);
+        if (!artist_info) {
+            throw new Error("No genres found for the artist.");
+        }
+        const artist_name = artist_info.name;
+        const artist_followers = artist_info.followers;
+        const artist_genres = artist_info.genres;
+        const artist_popularity = artist_info.popularity;
+        const imageURL = artist_info.image;
+
+        const formattedGenres = artist_genres
+          .map((genre: string) => genre.charAt(0).toUpperCase() + genre.slice(1)) // Capitalize each genre
+          .join(", ");
+        const formattedFollowers = artist_followers.toLocaleString();
+
+        console.log(artist_name, artist_genres, artist_popularity);
+
+
+        return {
+            // text: artist_info,
+            text: "Artist information",
+            data: { 
+                name: artist_name,
+                followers: artist_followers,
+                genres: artist_genres,
+                popularity: artist_popularity,
+                image: imageURL
+             },
+            ui: new CardUIBuilder()
+              .setRenderMode("page")  
+              .title(`Artist information`)
+              .addChild(
+                new ImageCardUIBuilder(imageURL) 
+                  .aspectRatio("square")
+                  .title(`${artist_name}`)
+                  .description(`Followers: ${formattedFollowers}\nGenres: ${formattedGenres}\nPopularity: ${artist_popularity}`)
+                  .imageAlt(`Artist Image`)
+                  .build()
+              )
+              .build(),
+        };
+      } catch (error) {
+          console.error("Error executing Python script:", error);
+          return {
+              text: "An error occurred while fetching the info.",
+              data: { genres: "Error: Unable to fetch spotify data." + error },
+              ui: new CardUIBuilder()
+                  .title("Error")
+                  .content("Unable to fetch spotify data.")
+                  .build(),
+          };
+      }
+  },
+};
 
 const getArtistGenres: ToolConfig = {
     id: "get-genres",
@@ -38,7 +122,6 @@ const getArtistGenres: ToolConfig = {
       );
         try {
           console.log(`User / Agent ${agentInfo.id} requested genres at ${artist}`);
-          console.log("Test");
           const { stdout, stderr } = await execAsync(`python3 apis/get_genres.py "${artist}"`);
           // const apiResponse = await axios.get(
           //   `https://api.spotify.com/v1/search?q=${artist}&type=artist&limit=1`,
@@ -120,7 +203,7 @@ const dainService = defineDAINService({
       }
     }
   },
-    tools: [createOAuth2Tool("spotify"), getArtistGenres],
+    tools: [createOAuth2Tool("spotify"), getArtistInfo, getArtistGenres],
 });
 
 dainService.startNode().then(({ address }) => {
