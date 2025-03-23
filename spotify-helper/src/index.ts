@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { exec } from "child_process";
 import { promisify } from "util";
+import axios from "axios";
 import {
   defineDAINService,
   ToolConfig,
@@ -27,33 +28,52 @@ const getArtistGenres: ToolConfig = {
         .describe("Input parameters for the spotify request"),
     output: z
         .object({
-            genres: z.string().describe("Genre information"),
+            genres: z.string().describe("Genres of the artist"),
         })
         .describe("Genre information"),
     pricing: { pricePerUse: 0, currency: "USD" },
     handler: async ({ artist }, agentInfo, context) => {
+      console.log(
+        `User / Agent ${agentInfo.id} requested genres from ${artist})`
+      );
         try {
-            const { stdout, stderr } = await execAsync(`python artist_genres.py "${artist}"`);
+          console.log(`User / Agent ${agentInfo.id} requested genres at ${artist}`);
+          console.log("Test");
+          const { stdout, stderr } = await execAsync(`python3 apis/get_genres.py "${artist}"`);
+          // const apiResponse = await axios.get(
+          //   `https://api.spotify.com/v1/search?q=${artist}&type=artist&limit=1`,
+          //   {
+          //     headers: {
+          //       Authorization: `Bearer ${process.env.SPOTIFY_ACCESS_TOKEN}`, // Use the access token
+          //       "Content-Type": "application/json",
+          //     },
+          //   }
+          // );
 
-            if (stderr) {
-                throw new Error(stderr);
-            }
+          // const { genres } = apiResponse.data.artists.items[0];
 
-            const genres = stdout.trim();
+          if (stderr) {
+              throw new Error(stderr);
+          }
 
-            return {
-                text: genres,
-                data: { genres },
-                ui: new CardUIBuilder()
-                    .title(`Artist genres`)
-                    .content(genres)
-                    .build(),
-            };
+          const genres = stdout.trim();
+          if (!genres) {
+              throw new Error("No genres found for the artist.");
+          }
+
+          return {
+              text: genres,
+              data: { genres },
+              ui: new CardUIBuilder()
+                  .title(`Artist genres`)
+                  .content(genres)
+                  .build(),
+          };
         } catch (error) {
             console.error("Error executing Python script:", error);
             return {
                 text: "An error occurred while fetching the info.",
-                data: { genres: "Error: Unable to fetch spotify data." },
+                data: { genres: "Error: Unable to fetch spotify data." + error },
                 ui: new CardUIBuilder()
                     .title("Error")
                     .content("Unable to fetch spotify data.")
@@ -61,53 +81,6 @@ const getArtistGenres: ToolConfig = {
             };
         }
     },
-};
-
-const getWeatherConfig: ToolConfig = {
-  id: "get-weather",
-  name: "Get Weather",
-  description: "Fetches current weather for a city",
-  input: z
-    .object({
-      city: z.string().describe("City name"),
-    })
-    .describe("Input parameters for the weather request"),
-  output: z
-    .object({
-      weather: z.string().describe("Weather information"),
-    })
-    .describe("Weather information"),
-  pricing: { pricePerUse: 0, currency: "USD" },
-  handler: async ({ city }, agentInfo, context) => {
-    try {
-      const { stdout, stderr } = await execAsync(`python weather_lookup.py "${city}"`);
-      
-      if (stderr) {
-        throw new Error(stderr);
-      }
-
-      const weather = stdout.trim();
-
-      return {
-        text: weather,
-        data: { weather },
-        ui: new CardUIBuilder()
-          .title(`Weather in ${city}`)
-          .content(weather)
-          .build(),
-      };
-    } catch (error) {
-      console.error("Error executing Python script:", error);
-      return {
-        text: "An error occurred while fetching the weather.",
-        data: { weather: "Error: Unable to fetch weather data." },
-        ui: new CardUIBuilder()
-          .title("Error")
-          .content("Unable to fetch weather data.")
-          .build(),
-      };
-    }
-  },
 };
 
 const tokenStore = new Map<string, OAuth2Tokens>();
@@ -132,7 +105,13 @@ const dainService = defineDAINService({
         clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
         authorizationUrl: "https://accounts.spotify.com/authorize",
         tokenUrl: "https://accounts.spotify.com/api/token",
-        scopes: ["user-read-private", "user-read-email"],
+        scopes: [
+          "user-read-private", 
+          "user-read-email", 
+          "playlist-read-private", // Example: Access private playlists
+          "user-library-read",    // Example: Access user's saved tracks and albums
+          "user-top-read"         // Example: Access user's top artists and tracks],
+        ],
             onSuccess: async (agentId, tokens) => {
                 tokenStore.set(agentId, tokens);
                 console.log(`Tokens stored for agent: ${agentId}`);
@@ -141,7 +120,7 @@ const dainService = defineDAINService({
       }
     }
   },
-    tools: [createOAuth2Tool("spotify"),getWeatherConfig, getArtistGenres],
+    tools: [createOAuth2Tool("spotify"), getArtistGenres],
 });
 
 dainService.startNode().then(({ address }) => {

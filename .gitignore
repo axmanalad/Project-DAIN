@@ -1,2 +1,8 @@
 # node_modules directory
 node_modules/
+
+# pycache directory
+__pycache__/
+
+# Python compiled files
+*.pyc
