@@ -1,5 +1,5 @@
 {
-  "name": "finance",
+  "name": "spotify-helper",
   "version": "1.0.0",
   "description": "A Dain Protocol project",
   "main": "src/index.ts",
